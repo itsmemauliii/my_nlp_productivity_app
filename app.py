@@ -1,82 +1,93 @@
 import streamlit as st
-import pandas as pd
-import hashlib
-import os
+import sqlite3
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError
 
-# --- Utilities ---
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
+ph = PasswordHasher()
 
-def check_user(username, password):
-    df = pd.read_csv("users.csv")
-    hashed_pw = hash_password(password)
-    return not df[(df["username"] == username) & (df["password"] == hashed_pw)].empty
+# DB Setup
+def create_connection():
+    conn = sqlite3.connect("users.db", check_same_thread=False)
+    return conn
 
-def create_user(username, password):
-    df = pd.read_csv("users.csv")
-    if username in df["username"].values:
-        return False  # User already exists
-    new_user = pd.DataFrame({"username": [username], "password": [hash_password(password)]})
-    df = pd.concat([df, new_user], ignore_index=True)
-    df.to_csv("users.csv", index=False)
-    return True
+def create_users_table(conn):
+    with conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL
+            )
+        """)
 
-# --- Login Page ---
+conn = create_connection()
+create_users_table(conn)
+
+# Create a new user (signup)
+def add_user(username, password):
+    hashed_pwd = ph.hash(password)
+    try:
+        with conn:
+            conn.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, hashed_pwd))
+        return True
+    except sqlite3.IntegrityError:
+        return False
+
+# Verify login credentials
+def verify_user(username, password):
+    user = conn.execute("SELECT password FROM users WHERE username = ?", (username,)).fetchone()
+    if user:
+        try:
+            return ph.verify(user[0], password)
+        except VerifyMismatchError:
+            return False
+    return False
+
+# Login Page
 def login_page():
-    st.title("🔐 Login to Productivity App")
+    st.subheader("🔐 Login")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
-
     if st.button("Login"):
-        if check_user(username, password):
+        if verify_user(username, password):
             st.session_state.logged_in = True
             st.session_state.username = username
-            st.success("✅ Login successful!")
-            st.experimental_rerun()
+            st.success(f"✅ Welcome, {username}!")
         else:
-            st.error("❌ Invalid credentials")
+            st.error("❌ Invalid username or password.")
 
-    if st.button("Go to Signup"):
-        st.session_state.page = "signup"
-        st.experimental_rerun()
-
-# --- Signup Page ---
+# Signup Page
 def signup_page():
-    st.title("📝 Create an Account")
-    username = st.text_input("Choose a username")
-    password = st.text_input("Choose a password", type="password")
-
+    st.subheader("📝 Signup")
+    new_user = st.text_input("Create Username")
+    new_pass = st.text_input("Create Password", type="password")
     if st.button("Signup"):
-        if create_user(username, password):
+        if add_user(new_user, new_pass):
             st.success("🎉 Account created! You can now log in.")
-            st.session_state.page = "login"
-            st.experimental_rerun()
         else:
-            st.error("⚠️ Username already taken!")
+            st.error("🚫 Username already exists.")
 
-    if st.button("Back to Login"):
-        st.session_state.page = "login"
-        st.experimental_rerun()
+# Main App
+def main():
+    st.title("🧠 Productivity App - Login System")
 
-# --- Main App after Login ---
-def main_app():
-    st.title("🚀 Welcome to the NLP Productivity App")
-    st.write(f"👋 Hello **{st.session_state.username}**!")
-    st.markdown("Start building your productivity workflow here...")
-
-    if st.button("Logout"):
+    if "logged_in" not in st.session_state:
         st.session_state.logged_in = False
-        st.experimental_rerun()
 
-# --- Routing ---
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-if "page" not in st.session_state:
-    st.session_state.page = "login"
+    menu = st.sidebar.selectbox("Menu", ["Login", "Signup"])
 
-if st.session_state.logged_in:
-    main_app()
-elif st.session_state.page == "login":
-    login_page()
-elif st.session_state.page == "signup":
-    signup_page()
+    if not st.session_state.logged_in:
+        if menu == "Login":
+            login_page()
+        else:
+            signup_page()
+    else:
+        st.success(f"🎉 Logged in as {st.session_state.username}")
+        if st.button("Logout"):
+            st.session_state.logged_in = False
+            st.session_state.username = ""
+        else:
+            st.write("📋 Your dashboard goes here (to-do list, notes, etc.)")
+
+if __name__ == "__main__":
+    main()
