@@ -1,51 +1,46 @@
 import streamlit as st
-import sqlite3
-from utils.db import create_connection, insert_journal_entry, get_today_summary
-from utils.auth import check_login
-from datetime import datetime
-from textblob import TextBlob
+from utils.db import insert_journal_entry, get_today_summary
+from utils.auth import login_user
+from utils.nlp import analyze_text
 
-st.set_page_config(page_title="Productivity Dashboard", layout="wide")
+st.set_page_config(page_title="Dashboard", page_icon="🧠", layout="centered")
 
-# -------------- LOGIN CHECK --------------
-if 'logged_in' not in st.session_state or not st.session_state['logged_in']:
-    st.error("You must log in first.")
-    st.stop()
+st.markdown("<h1 style='text-align: center;'>🧠 Productivity Dashboard</h1>", unsafe_allow_html=True)
 
-# -------------- PAGE TITLE --------------
-st.title("📊 Productivity Dashboard")
+# Login Section
+st.sidebar.header("🔐 Login")
+username = st.sidebar.text_input("Username")
+password = st.sidebar.text_input("Password", type="password")
+login_btn = st.sidebar.button("Login")
 
-# -------------- DATABASE --------------
-conn = create_connection()
+if login_btn:
+    if login_user(username, password):
+        st.session_state["logged_in"] = True
+        st.session_state["username"] = username
+        st.success(f"Welcome, {username}!")
+    else:
+        st.error("Invalid username or password.")
 
-# -------------- JOURNAL SECTION --------------
-st.subheader("📝 Daily Journal")
-with st.form("journal_form"):
-    journal_text = st.text_area("How did your day go?", height=150)
-    submitted = st.form_submit_button("Analyze & Save")
+# If logged in
+if st.session_state.get("logged_in"):
+    st.markdown("### ✍️ Write your journal entry:")
+    entry = st.text_area("How was your day?", height=150)
 
-    if submitted and journal_text.strip() != "":
-        # NLP SENTIMENT ANALYSIS
-        blob = TextBlob(journal_text)
-        polarity = blob.sentiment.polarity
-        if polarity > 0.1:
-            sentiment = "😊 Positive"
-        elif polarity < -0.1:
-            sentiment = "☹️ Negative"
+    if st.button("Save Entry"):
+        if entry.strip() != "":
+            insert_journal_entry(st.session_state["username"], entry)
+            st.success("Your entry has been saved.")
         else:
-            sentiment = "😐 Neutral"
+            st.warning("Empty entry cannot be saved.")
 
-        # Save to DB
-        insert_journal_entry(conn, st.session_state['username'], journal_text, sentiment)
+    st.markdown("---")
+    st.markdown("### 🪞 Daily Reflections")
 
-        st.success(f"Sentiment: {sentiment}")
-
-# -------------- TODAY'S SUMMARY --------------
-st.subheader("📌 Today's Mood Summary")
-summary = get_today_summary(conn, st.session_state['username'])
-if summary:
-    st.write(f"🗓️ Date: {summary['date']}")
-    st.write(f"✍️ Journal: {summary['entry']}")
-    st.write(f"📈 Sentiment: {summary['sentiment']}")
-else:
-    st.info("No journal entry found for today.")
+    summaries = get_today_summary(st.session_state["username"])
+    if summaries:
+        for i, s in enumerate(summaries[::-1]):
+            with st.expander(f"Entry {len(summaries) - i}"):
+                st.write(s)
+                st.markdown("##### 🧠 NLP Summary:")
+                summary = analyze_text(s)
+                st.info(
