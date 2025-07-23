@@ -1,93 +1,71 @@
+# app.py
 import streamlit as st
 import sqlite3
 from argon2 import PasswordHasher
-from argon2.exceptions import VerifyMismatchError
+import os
 
 ph = PasswordHasher()
 
-# DB Setup
-def create_connection():
-    conn = sqlite3.connect("users.db", check_same_thread=False)
-    return conn
+# DB setup
+def init_db():
+    conn = sqlite3.connect("productivity.db")
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS users (
+                 username TEXT PRIMARY KEY,
+                 password TEXT)''')
+    conn.commit()
+    conn.close()
 
-def create_users_table(conn):
-    with conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                password TEXT NOT NULL
-            )
-        """)
+init_db()
 
-conn = create_connection()
-create_users_table(conn)
+# Signup page
+def signup_page():
+    st.title("Sign Up")
+    new_user = st.text_input("Username")
+    new_password = st.text_input("Password", type="password")
+    if st.button("Sign Up"):
+        conn = sqlite3.connect("productivity.db")
+        c = conn.cursor()
+        c.execute("SELECT * FROM users WHERE username=?", (new_user,))
+        if c.fetchone():
+            st.error("Username already exists")
+        else:
+            hashed_pwd = ph.hash(new_password)
+            c.execute("INSERT INTO users (username, password) VALUES (?, ?)", (new_user, hashed_pwd))
+            conn.commit()
+            st.success("User registered! Please log in.")
+        conn.close()
 
-# Create a new user (signup)
-def add_user(username, password):
-    hashed_pwd = ph.hash(password)
-    try:
-        with conn:
-            conn.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, hashed_pwd))
-        return True
-    except sqlite3.IntegrityError:
-        return False
-
-# Verify login credentials
-def verify_user(username, password):
-    user = conn.execute("SELECT password FROM users WHERE username = ?", (username,)).fetchone()
-    if user:
-        try:
-            return ph.verify(user[0], password)
-        except VerifyMismatchError:
-            return False
-    return False
-
-# Login Page
+# Login page
 def login_page():
-    st.subheader("🔐 Login")
+    st.title("Login")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
     if st.button("Login"):
-        if verify_user(username, password):
-            st.session_state.logged_in = True
-            st.session_state.username = username
-            st.success(f"✅ Welcome, {username}!")
+        conn = sqlite3.connect("productivity.db")
+        c = conn.cursor()
+        c.execute("SELECT password FROM users WHERE username=?", (username,))
+        data = c.fetchone()
+        conn.close()
+        if data:
+            try:
+                ph.verify(data[0], password)
+                st.session_state['username'] = username
+                st.success("Login successful!")
+                st.switch_page("1_Dashboard.py")
+            except:
+                st.error("Incorrect password")
         else:
-            st.error("❌ Invalid username or password.")
+            st.error("User not found")
 
-# Signup Page
-def signup_page():
-    st.subheader("📝 Signup")
-    new_user = st.text_input("Create Username")
-    new_pass = st.text_input("Create Password", type="password")
-    if st.button("Signup"):
-        if add_user(new_user, new_pass):
-            st.success("🎉 Account created! You can now log in.")
-        else:
-            st.error("🚫 Username already exists.")
-
-# Main App
-def main():
-    st.title("🧠 Productivity App - Login System")
-
-    if "logged_in" not in st.session_state:
-        st.session_state.logged_in = False
-
-    menu = st.sidebar.selectbox("Menu", ["Login", "Signup"])
-
-    if not st.session_state.logged_in:
-        if menu == "Login":
-            login_page()
-        else:
-            signup_page()
+# Main
+st.set_page_config(page_title="NLP Productivity App", layout="centered")
+if 'username' not in st.session_state:
+    menu = ["Login", "Sign Up"]
+    choice = st.selectbox("Menu", menu)
+    if choice == "Login":
+        login_page()
     else:
-        st.success(f"🎉 Logged in as {st.session_state.username}")
-        if st.button("Logout"):
-            st.session_state.logged_in = False
-            st.session_state.username = ""
-        else:
-            st.write("📋 Your dashboard goes here (to-do list, notes, etc.)")
-
-if __name__ == "__main__":
-    main()
+        signup_page()
+else:
+    st.switch_page("1_Dashboard.py")
