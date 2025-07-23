@@ -1,30 +1,41 @@
 import streamlit as st
-from utils.auth import check_login
-from textblob import download_corpora
-download_corpora.download_all()
+from auth import login
+from db import init_db, save_entry, get_all_entries
+from nlp_analysis import analyze_text
+import pandas as pd
 
+# Page setup
 st.set_page_config(page_title="NLP Productivity App", layout="wide")
 
-# Session state login
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
+# DB init
+init_db()
 
-st.title("🔐 Welcome to Your NLP Productivity Tracker")
+# User login
+if not login():
+    st.stop()
 
-if not st.session_state.logged_in:
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
-    
-    if st.button("Login"):
-        if check_login(username, password):
-            st.success("✅ Logged in successfully!")
-            st.session_state.logged_in = True
-            st.experimental_rerun()
-        else:
-            st.error("🚫 Invalid credentials. Please try again.")
-else:
-    st.sidebar.success("✅ You are logged in.")
-    st.sidebar.page_link("pages/1_Dashboard.py", label="📔 Dashboard")
-    st.sidebar.page_link("pages/2_Tasks.py", label="🧠 Tasks")
-    st.sidebar.page_link("pages/3_Analytics.py", label="📊 Analytics")
-    st.sidebar.button("Logout", on_click=lambda: st.session_state.update({"logged_in": False}))
+# Session state
+if "entries" not in st.session_state:
+    st.session_state.entries = get_all_entries()
+
+# UI
+st.title("📔 NLP Productivity Tracker")
+
+with st.form("task_form"):
+    st.subheader("📝 Add Your Task or Journal Entry")
+    content = st.text_area("Write here...", height=150)
+    submitted = st.form_submit_button("Analyze & Save")
+    if submitted and content:
+        sentiment, keywords = analyze_text(content)
+        save_entry(content, sentiment, ", ".join(keywords))
+        st.success("Saved and analyzed.")
+        st.session_state.entries = get_all_entries()
+
+# Display Entries
+if st.session_state.entries:
+    df = pd.DataFrame(st.session_state.entries, columns=["Text", "Sentiment", "Keywords", "Timestamp"])
+    st.dataframe(df)
+
+    st.subheader("📊 Sentiment Summary")
+    st.bar_chart(df["Sentiment"].value_counts())
+
