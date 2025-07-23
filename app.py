@@ -1,5 +1,7 @@
 import streamlit as st
 from utils.auth import check_login
+from textblob import download_corpora
+download_corpora.download_all()
 
 st.set_page_config(page_title="NLP Productivity App", layout="wide")
 
