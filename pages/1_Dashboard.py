@@ -43,4 +43,9 @@ if st.session_state.get("logged_in"):
                 st.write(s)
                 st.markdown("##### 🧠 NLP Summary:")
                 summary = analyze_text(s)
-                st.info(
+                st.info(summary)
+    else:
+        st.info("No entries yet for today. Write something above.")
+else:
+    st.warning("Please log in from the sidebar to access the dashboard.")
+
