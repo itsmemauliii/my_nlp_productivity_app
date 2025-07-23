@@ -1,35 +1,26 @@
 import sqlite3
-from argon2 import PasswordHasher
+from datetime import datetime
 
-ph = PasswordHasher()
+def create_connection():
+    return sqlite3.connect("data/productivity.db", check_same_thread=False)
 
-def init_db():
-    conn = sqlite3.connect("data/productivity.db")
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            username TEXT PRIMARY KEY,
-            password TEXT
-        )
-    ''')
-    # Optional: Add a sample user for testing
-    try:
-        cursor.execute("INSERT INTO users (username, password) VALUES (?, ?)",
-                       ("testuser", ph.hash("testpass")))
-    except sqlite3.IntegrityError:
-        pass
+def insert_journal_entry(username, journal_text, mood):
+    conn = create_connection()
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO journal (username, journal_text, mood, timestamp) VALUES (?, ?, ?, ?)",
+        (username, journal_text, mood, datetime.now()),
+    )
     conn.commit()
     conn.close()
 
-def check_user_credentials(username, password):
-    conn = sqlite3.connect("data/productivity.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT password FROM users WHERE username = ?", (username,))
-    record = cursor.fetchone()
+def get_today_summary(username):
+    conn = create_connection()
+    c = conn.cursor()
+    c.execute(
+        "SELECT journal_text, mood, timestamp FROM journal WHERE username = ? ORDER BY timestamp DESC LIMIT 5",
+        (username,),
+    )
+    rows = c.fetchall()
     conn.close()
-    if record:
-        try:
-            return ph.verify(record[0], password)
-        except:
-            return False
-    return False
+    return rows
